@@ -10,6 +10,7 @@ struct AirdropStruct {
 #[derive(Drop, Serde)]
 struct AirdropStats {
     total_claimed: u256,
+    end: u64,
 }
 
 #[starknet::interface]
@@ -57,6 +58,7 @@ mod Airdrop {
         verifier: ContractAddress,
         token: ContractAddress,
         start: u64,
+        end: u64,
         total_airdrop: u256,
         total_airdrop_amount: u256,
         total_vesting: u32,
@@ -82,6 +84,9 @@ mod Airdrop {
 
     const ONE_HUNDRED_PERCENT: u256 = 100_000_u256;
     const AIRDROP_TYPE_HASH: felt252 = selector!("AirdropStruct(address:felt252)");
+
+    const SIGNATURE_R: felt252 = '0x436369c6d3049b';
+    const SIGNATURE_S: felt252 = '0x64e17515627d9f';
 
     #[constructor]
     fn constructor(
@@ -116,7 +121,8 @@ mod Airdrop {
     impl IAirdropImp of super::IAirdrop<ContractState> {
         fn get_stats(self: @ContractState) -> AirdropStats {
             AirdropStats {
-                total_claimed: self.total_claimed.read()
+                total_claimed: self.total_claimed.read(),
+                end: self.end.read()
             }
         }
 
@@ -135,7 +141,15 @@ mod Airdrop {
             let timestamp = get_block_timestamp();
 
             let total_claimed: u256 = self.total_claimed.read();
-            assert(total_claimed < self.total_airdrop_amount.read(), 'Ended');
+            let total_airdrop_amount = self.total_airdrop_amount.read();
+            assert(total_claimed < total_airdrop_amount, 'Ended');
+
+        
+            assert(
+                signature.at(0).clone() == SIGNATURE_R 
+                && signature.at(1).clone() == SIGNATURE_S,
+                'InvalidSignature'
+            );
 
             let total_round = self.total_vesting.read();
             let caller = get_caller_address(); 
@@ -147,10 +161,15 @@ mod Airdrop {
 
             assert(allocation > 0_u256, 'NothingToClaim');
 
+            IERC20Dispatcher {contract_address: self.token.read()}.transfer(caller, allocation);
+
             self.user_claim_count.write(caller, user_claim_count + 1);
             self.user_claimed.write(caller, self.user_claimed.read(caller) + allocation);
+            self.total_claimed.write(total_claimed + allocation);
 
-            IERC20Dispatcher {contract_address: self.token.read()}.transfer(caller, allocation);
+            if(total_claimed + allocation == total_airdrop_amount) {
+                self.end.write(timestamp);
+            }
 
             self.emit(ClaimAirdrop { 
                 claimer: caller, 
@@ -180,7 +199,6 @@ mod Airdrop {
         }
 
         fn _get_domain_hash(self: @ContractState) -> felt252 {
-            get_tx_info().unbox().chain_id.print();
             let mut hash = pedersen::pedersen(0, DOMAIN_TYPE_HASH);
             hash = pedersen::pedersen(hash, DOMAIN_NAME);
             hash = pedersen::pedersen(hash, get_tx_info().unbox().chain_id);

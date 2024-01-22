@@ -7,10 +7,11 @@ mod launchpad {
     mod structs;
     mod launchpad;
     mod airdrop;
-    mod locker;
+    mod locking;
 }
 mod utils {
     mod constants;
+    mod call_fallback;
 }
 
 mod mocks {
@@ -25,5 +26,6 @@ mod tests {
     mod launchpad {
         // mod launchpad;
         // mod airdrop;
+        mod locking;
     }
 }
