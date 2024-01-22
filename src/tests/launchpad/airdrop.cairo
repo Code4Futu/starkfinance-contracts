@@ -20,11 +20,12 @@ use starknet::class_hash::{Felt252TryIntoClassHash, class_hash_to_felt252};
 use rules_account::account::Account;
 use rules_account::account::{ AccountABIDispatcher, AccountABIDispatcherTrait };
 
-use starkfinance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
+use starkfinance::interfaces::token::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
 use starkfinance::mocks::erc20::{ERC20};
-use starkfinance::launchpad::airdrop::{
-    Airdrop, IAirdropDispatcher, IAirdropDispatcherTrait,
+use starkfinance::interfaces::launchpad::airdrop::{
+    ISFAirdropDispatcher, ISFAirdropDispatcherTrait,
 };
+use starkfinance::launchpad::airdrop::{Airdrop};
 
 
 const NAME: felt252 = 'Test';
@@ -79,7 +80,7 @@ fn deploy_airdrop(
         total_airdrop_amount: u256,
         vesting_time: Array<u64>,
         vesting_percent: Array<u256>,
-    ) -> (IAirdropDispatcher, ContractAddress) {
+    ) -> (ISFAirdropDispatcher, ContractAddress) {
     let mut metadata = ArrayTrait::new();
     token.serialize(ref metadata);
     start.serialize(ref metadata);
@@ -92,7 +93,7 @@ fn deploy_airdrop(
         Airdrop::TEST_CLASS_HASH.try_into().unwrap(), 0, metadata.span(), false
     )
         .unwrap();
-    let mut airdrop = IAirdropDispatcher { contract_address: airdrop_address };
+    let mut airdrop = ISFAirdropDispatcher { contract_address: airdrop_address };
 
     (airdrop, airdrop_address)
 }

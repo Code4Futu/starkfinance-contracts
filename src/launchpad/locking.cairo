@@ -1,62 +1,33 @@
-use starknet::ContractAddress;
-// use starkfinance::utils::{Lock};
-
-#[derive(Copy, Drop, Serde, starknet::Store, PartialEq)] 
-struct Lock {
-    owner: ContractAddress,
-    token: ContractAddress,
-    amount: u256,
-    start: u64,
-    tge: u64,
-    is_vesting: bool,
-    tge_percent: u256,
-}
-
-#[derive(Drop, Serde)]
-struct LockStats {
-    total_claimed: u256,
-    end: u64,
-}
-
-#[starknet::interface]
-trait ILocking<T> {
-    // fn get_total_lock(self: @T) -> u256;
-    // fn get_lock(self: @T, lock_id: u256) -> Lock;
-    fn create(
-        ref self: T,
-        owner: ContractAddress,
-        token: ContractAddress,
-        amount: u256,
-        start: u64,
-        tge: u64,
-        is_vesting: bool,
-        tge_percent: u256,
-        vesting_time: Array<u64>,
-        vesting_percent: Array<u256>,
-    );
-    // fn claim_lock(ref self: T, lock_id: u256);
-}
-
-
-
 #[starknet::contract]
-mod Locking {
-    use starknet::{get_caller_address, get_contract_address, get_block_timestamp};
-    use starknet::ContractAddress;
+mod SFLocking {
+    use core::debug::PrintTrait;
+use starknet::{
+        get_caller_address, 
+        get_contract_address, 
+        get_block_timestamp,
+        call_contract_syscall,
+        ContractAddress
+    };
+    
+    use array::ArrayTrait;
 
-    use super::{Lock, LockStats};
-    use starkfinance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
+
+    // locals
+    use starkfinance::interfaces::token::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
     use starkfinance::utils::call_fallback::{call_contract_with_selector_fallback};
+    use starkfinance::interfaces::launchpad::locking::{ISFLocking, Lock};
+
+
+    const ONE_HUNDRED_PERCENT: u256 = 100_000_u256;
 
     #[storage]
     struct Storage {
         total_lock: LegacyMap::<ContractAddress, u256>, // token_address -> latest lock_id of token
         locks: LegacyMap::<(ContractAddress, u256), Lock>, // (token_address, lock_id) -> Lock
-        total_vesting: LegacyMap::<(ContractAddress, u256), u32>, // (token_address, lock_id) -> (index, vesting_percent)
-        vesting_time: LegacyMap::<(ContractAddress, u256), (u32, u64)>, // (token_address, lock_id) -> (index, vesting_time)
-        vesting_percent: LegacyMap::<(ContractAddress, u256), (u32, u256)>, // (token_address, lock_id) -> (index, vesting_percent)
-        claimed: LegacyMap::<(ContractAddress, u256), u256>, // token_address, lock_id) -> claimed amount
-        claimed_count: LegacyMap::<(ContractAddress, u256), u256>, // (token_address, lock_id) -> claimed count
+        total_vesting: LegacyMap::<(ContractAddress, u256), u32>, // (token_address, lock_id) -> total_vesting
+        vesting_time: LegacyMap::<(ContractAddress, u256, u32), u64>, // (token_address, lock_id, index) -> vesting_time
+        vesting_percent: LegacyMap::<(ContractAddress, u256, u32), u256>, // (token_address, lock_id, index) -> vesting_percent
+        claimed_count: LegacyMap::<(ContractAddress, u256, ContractAddress), u32>, // (token_address, lock_id, user_address) -> claimed count
     }
 
     #[event]
@@ -82,13 +53,44 @@ mod Locking {
 
 
     #[external(v0)]
-    impl ILockingImpl of super::ILocking<ContractState> {
-        fn create(
+    impl ISFLockingImpl of ISFLocking<ContractState> {
+        fn get_lock(self: @ContractState, token: ContractAddress, lock_id: u256) -> (Lock, Array<u64>, Array<u256>) {
+            assert(lock_id < self.total_lock.read(token), 'Invalid lock id');
+
+            let lock: Lock = self.locks.read((token, lock_id));
+
+            let mut vesting_time: Array<u64> = ArrayTrait::<u64>::new();
+            let mut vesting_percent: Array<u256> = ArrayTrait::<u256>::new();
+        
+            if(lock.is_vesting) {
+                let total_vesting = self.total_vesting.read((token, lock_id));
+                let mut i: u32 = 0_u32;
+                loop {
+                    if i>= total_vesting {
+                        break;
+                    };
+                    vesting_time.append(
+                        self.vesting_time.read((token, lock_id, i))
+                    );
+                    vesting_percent.append(
+                        self.vesting_percent.read((token, lock_id, i))
+                    );
+                    i += 1;
+                };
+            }
+            
+            (lock, vesting_time, vesting_percent)
+        }
+
+        fn get_claimed_count(self: @ContractState, token: ContractAddress, lock_id: u256, spender: ContractAddress) -> u32 {
+            self.claimed_count.read((token, lock_id, spender))
+        }
+
+        fn lock(
             ref self: ContractState, 
             owner: ContractAddress,
             token: ContractAddress,
             amount: u256,
-            start: u64,
             tge: u64,
             is_vesting: bool,
             tge_percent: u256,
@@ -99,37 +101,43 @@ mod Locking {
 
             // TODO first take fee;
 
-
             // transfer token lock
             let this_contract = get_contract_address();
             let caller = get_caller_address(); 
             InternalFunctions::_transfer_token_from(token, caller, this_contract, amount);
 
-            lock_id += 1;
-
-            self.locks.write((token, lock_id), Lock {
-                owner,
-                token,
-                amount,
-                start,
-                tge,
-                is_vesting,
-                tge_percent,
-            });
-            if(is_vesting) {
+            let mut _is_vesting = false;
+            let mut total_percent: u256 = tge_percent;
+            if(is_vesting && tge_percent < ONE_HUNDRED_PERCENT) {
+                _is_vesting = true;
                 let total_vesting = vesting_time.len();
-                assert(total_vesting == vesting_percent.len(), 'Invalid vesting');
+                assert(total_vesting == vesting_percent.len(), 'InvalidVesting');
                 let mut i: u32 = 0_u32;
                 loop {
                     if i>= total_vesting {
                         break;
                     };
-                    self.vesting_time.write((token, lock_id),  (i, vesting_time.at(i).clone()));
-                    self.vesting_percent.write((token, lock_id), (i, vesting_percent.at(i).clone()));
+                    self.vesting_time.write((token, lock_id, i),  vesting_time.at(i).clone());
+                    let percent = vesting_percent.at(i).clone();
+                    self.vesting_percent.write((token, lock_id, i), percent);
+                    total_percent += percent;
                     i += 1;
                 };
                 self.total_vesting.write((token, lock_id), total_vesting);
             }
+
+            assert(total_percent <= ONE_HUNDRED_PERCENT, 'MustEq100%');
+
+            self.locks.write((token, lock_id), Lock {
+                owner,
+                token,
+                amount,
+                tge,
+                is_vesting: _is_vesting,
+                tge_percent,
+            });
+
+            lock_id += 1;
             self.total_lock.write(token, lock_id);
             
             self.emit(Created { 
@@ -139,26 +147,44 @@ mod Locking {
             });
         }
 
-        // fn claim_lock(ref self: ContractState, lock_id: u256) {
-        //     let this_contract = get_contract_address();
-        //     let caller = get_caller_address();  
-        //     let current_time: u64 = get_block_timestamp();
-        //     let claimed: bool = self.lock_claimed.read(lock_id);
+        fn unlock(ref self: ContractState, token: ContractAddress, lock_id: u256) {
+            let this_contract: ContractAddress = get_contract_address();
+            let caller: ContractAddress = get_caller_address();  
+            let current_time: u64 = get_block_timestamp();
 
-        //     // let lock: Lock = self.locks.read(lock_id);
-        //     assert(!claimed, 'LockClaimed');
-        //     // assert(lock.locker == caller, 'OnlyLockerCanClaim');
-        //     // assert(lock.end <= current_time, 'LockNotEnd');
+            assert(lock_id < self.total_lock.read(token), 'InvalidLockId');
+            
+            let lock: Lock = self.locks.read((token, lock_id));
 
-        //     self.lock_claimed.write(lock_id, true);
+            assert(caller == lock.owner, 'Unauthorzied');
 
-        //     // IERC20Dispatcher {contract_address: lock.token}.transfer(caller, lock.amount);
+            let claimed_count: u32 = self.claimed_count.read((token, lock_id, caller));
 
-        //     self.emit(ClaimLock { 
-        //         id: lock_id, 
-        //         timestamp: get_block_timestamp() 
-        //     });
-        // }
+            let is_vesting: bool = lock.is_vesting;
+            
+            let mut amount: u256 = 0;
+            if (claimed_count == 0) {
+                assert(current_time >= lock.tge, 'NotTimeToClaim');
+                amount = lock.amount;
+                if(is_vesting) { 
+                    amount = lock.amount * lock.tge_percent / ONE_HUNDRED_PERCENT;
+                }
+            } else {
+                if(is_vesting) {
+                    assert(claimed_count > 0 && claimed_count <= self.total_vesting.read((token, lock_id)), 'ClaimedAllVesting');
+                    assert(current_time >= lock.tge + self.vesting_time.read((token, lock_id, claimed_count - 1)), 'NotTimeToClaimVesting');
+                    amount = lock.amount * self.vesting_percent.read((token, lock_id, claimed_count - 1)) / ONE_HUNDRED_PERCENT;
+                } else {
+                    assert(false, 'Claimed');
+                }
+            }
+
+            self.claimed_count.write((token, lock_id, caller), claimed_count + 1);
+
+            if(amount > 0) {
+                InternalFunctions::_transfer_token(token, this_contract, caller, amount);
+            }
+        }
     }
 
     #[generate_trait]
@@ -179,6 +205,19 @@ mod Locking {
                 token, selector!("transferFrom"), selector!("transfer_from"), call_data.span()
             )
                 .unwrap();
+        }
+
+        fn _transfer_token(
+            token: ContractAddress,
+            sender: ContractAddress,
+            recipient: ContractAddress,
+            amount: u256
+        ) {
+            let mut call_data = Default::default();
+            Serde::serialize(@recipient, ref call_data);
+            Serde::serialize(@amount, ref call_data);
+
+            call_contract_syscall(token, selector!("transfer"), call_data.span());
         }
     }
 }

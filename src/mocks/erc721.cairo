@@ -8,7 +8,7 @@ mod ERC721 {
     use traits::TryInto;
     use option::OptionTrait;
 
-    use starkfinance::interfaces::erc721::{IERC721};
+    use starkfinance::interfaces::token::erc721::{IERC721};
 
     #[storage]
     struct Storage {

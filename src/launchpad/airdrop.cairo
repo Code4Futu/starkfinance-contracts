@@ -1,27 +1,3 @@
-use starknet::{ContractAddress};
-use core::serde::Serde;
-
-
-#[derive(Drop, Copy, Hash)]
-struct AirdropStruct {
-    address: felt252,
-}
-
-#[derive(Drop, Serde)]
-struct AirdropStats {
-    total_claimed: u256,
-    end: u64,
-}
-
-#[starknet::interface]
-trait IAirdrop<T> {
-    fn get_stats(self: @T) -> AirdropStats;
-    fn get_user_stats(self: @T, spender: ContractAddress) -> Array<u256>;
-    fn claim(ref self: T, signature: Array<felt252>);
-    fn compute_message_hash(self: @T, account: ContractAddress) -> felt252;
-    fn verify_signature(self: @T, account: ContractAddress,  signature: Array<felt252>) -> bool;
-}
-
 #[starknet::contract]
 mod Airdrop {
     use core::debug::PrintTrait;
@@ -43,7 +19,7 @@ mod Airdrop {
     use rules_account::account::Account::InternalTrait as AccountInternalTrait;
     use ecdsa::check_ecdsa_signature;
 
-    use starkfinance::interfaces::erc20::{IERC20, IERC20Dispatcher, IERC20DispatcherTrait};
+    use starkfinance::interfaces::token::erc20::{IERC20, IERC20Dispatcher, IERC20DispatcherTrait};
     use starkfinance::utils::constants::{
         STARKNET_MESSAGE_PREFIX,
         DOMAIN_NAME,
@@ -51,7 +27,7 @@ mod Airdrop {
         DOMAIN_TYPE_HASH, 
         ERC165_ACCOUNT_INTERFACE_ID
     };
-    use super::{AirdropStats, AirdropStruct};
+    use starkfinance::interfaces::launchpad::airdrop::{ISFAirdrop, AirdropStats, AirdropStruct};
 
     #[storage]
     struct Storage {
@@ -118,7 +94,7 @@ mod Airdrop {
     }
 
     #[external(v0)]
-    impl IAirdropImp of super::IAirdrop<ContractState> {
+    impl ISFAirdropImp of ISFAirdrop<ContractState> {
         fn get_stats(self: @ContractState) -> AirdropStats {
             AirdropStats {
                 total_claimed: self.total_claimed.read(),

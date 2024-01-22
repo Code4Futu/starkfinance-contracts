@@ -4,7 +4,7 @@ mod ERC20 {
     use starknet::ContractAddress;
     use integer::BoundedInt;
 
-    use starkfinance::interfaces::erc20::{IERC20};
+    use starkfinance::interfaces::token::erc20::{IERC20};
 
     #[storage]
     struct Storage {

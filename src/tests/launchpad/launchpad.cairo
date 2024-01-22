@@ -20,15 +20,16 @@ use starknet::syscalls::deploy_syscall;
 use starknet::SyscallResultTrait;
 use starknet::class_hash::{Felt252TryIntoClassHash, class_hash_to_felt252}; 
 
-use starkfinance::interfaces::{
+use starkfinance::interfaces::token::{
     erc20::{IERC20Dispatcher, IERC20DispatcherTrait},
     erc721::{IERC721Dispatcher, IERC721DispatcherTrait}
 };
 use starkfinance::mocks::erc20::{ERC20};
 use starkfinance::mocks::erc721::{ERC721};
-use starkfinance::launchpad::launchpad::{
-    SFLaunchpad, ISFLaunchpadDispatcher, ISFLaunchpadDispatcherTrait,
+use starkfinance::interfaces::launchpad::launchpad::{
+    ISFLaunchpadDispatcher, ISFLaunchpadDispatcherTrait,
 };
+use starkfinance::launchpad::launchpad::{SFLaunchpad};
 
 const NAME: felt252 = 'Test';
 const SYMBOL: felt252 = 'TEST';

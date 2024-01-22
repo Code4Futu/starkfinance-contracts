@@ -1,41 +1,5 @@
-use core::serde::Serde;
-use starknet::{ContractAddress};
-
-#[derive(Drop, Serde)]
-struct SFLaunchpadStats {
-    total_participial: u256,
-    total_committed: u256,
-    total_committed_boosted: u256,
-    is_canceled: bool
-}
-
-#[derive(Drop, Serde)]
-struct UserStats {
-    committed: u256,
-    allocation: u256,
-    deducted: u256,
-    remaining: u256,
-    claimed: u256,
-    claimed_count: u32,
-    last_committed_time: u64,
-    claimable: u256
-}
-
-#[starknet::interface]
-trait ISFLaunchpad<T> {
-    fn get_stats(self: @T) -> SFLaunchpadStats;
-    fn get_user_stats(self: @T, spender: ContractAddress) -> UserStats;
-    fn stake_nft(ref self: T, nft_id: u256);
-    fn commit(ref self: T, commit_token_raise: u256);
-    fn claim(ref self: T);
-    fn claim_token_raise(ref self: T);
-    fn claim_remaining(ref self: T);
-    fn cancel(ref self: T);
-}
-
 #[starknet::contract]
 mod SFLaunchpad {
-    use super::{SFLaunchpadStats, UserStats};
     use core::debug::PrintTrait;
     use core::array::ArrayTrait;
     use core::serde::Serde;
@@ -52,9 +16,9 @@ mod SFLaunchpad {
     use clone::Clone;
 
     // locals
-    use starkfinance::interfaces::erc20::{IERC20, IERC20Dispatcher, IERC20DispatcherTrait};
-    use starkfinance::interfaces::erc721::{IERC721Dispatcher, IERC721DispatcherTrait};
-    use super::{ISFLaunchpad};
+    use starkfinance::interfaces::launchpad::launchpad::{ISFLaunchpad, LaunchpadStats, UserStats};
+    use starkfinance::interfaces::token::erc20::{IERC20, IERC20Dispatcher, IERC20DispatcherTrait};
+    use starkfinance::interfaces::token::erc721::{IERC721Dispatcher, IERC721DispatcherTrait};
 
     #[storage]
     struct Storage {
@@ -172,9 +136,9 @@ mod SFLaunchpad {
     }
 
     #[external(v0)]
-    impl ISFLaunchpadImp of super::ISFLaunchpad<ContractState> {
-        fn get_stats(self: @ContractState) -> SFLaunchpadStats {
-            SFLaunchpadStats {
+    impl ISFLaunchpadImp of ISFLaunchpad<ContractState> {
+        fn get_stats(self: @ContractState) -> LaunchpadStats {
+            LaunchpadStats {
                 total_participial: self.total_participial.read(),
                 total_committed: self.total_committed.read(),
                 total_committed_boosted: self.total_committed_boosted.read(),

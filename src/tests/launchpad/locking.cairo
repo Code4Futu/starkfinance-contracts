@@ -12,15 +12,16 @@ use option::OptionTrait;
 
 use starknet::{contract_address_const, get_block_timestamp};
 use starknet::contract_address::ContractAddress;
-use starknet::testing::{set_caller_address, set_contract_address, pop_log};
+use starknet::testing::{set_caller_address, set_contract_address, pop_log, set_block_timestamp};
 use starknet::syscalls::deploy_syscall;
 use starknet::SyscallResultTrait;
 use starknet::class_hash::{Felt252TryIntoClassHash, class_hash_to_felt252}; 
 
-use starkfinance::interfaces::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
+use starkfinance::interfaces::token::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
 use starkfinance::mocks::erc20::{ERC20};
-use starkfinance::launchpad::locking::{Locking, ILockingDispatcher, ILockingDispatcherTrait};
-// use starkfinance::Locker::Locker::{Event as LockerEvent, CreateLock};
+use starkfinance::interfaces::launchpad::locking::{ISFLockingDispatcher, ISFLockingDispatcherTrait};
+use starkfinance::launchpad::locking::{SFLocking,};
+// use starkfinance::Locker::Locker::{Event as LockerEvent, lockLock};
 
 const NAME: felt252 = 'Test';
 const SYMBOL: felt252 = 'TET';
@@ -31,16 +32,16 @@ struct Lock {
     
 }
 
-fn deploy_erc20() -> (
+fn deploy_erc20(init_supply: u256) -> (
         ContractAddress, 
         ContractAddress, 
         IERC20Dispatcher, 
         ContractAddress, 
-        ILockingDispatcher, 
+        ISFLockingDispatcher, 
         ContractAddress
     ) {
     let caller = contract_address_const::<1>();
-    let other_caller = contract_address_const::<1>();
+    let other_caller = contract_address_const::<2>();
     set_contract_address(caller);
 
     // deploy ERC20
@@ -50,11 +51,11 @@ fn deploy_erc20() -> (
     )
         .unwrap();
     let mut erc20_token = IERC20Dispatcher { contract_address: erc20_address };
-    erc20_token.mint(1000000000000000000000_u256);
+    erc20_token.mint(init_supply);
 
     // deploy Locker
     let (locking_address, _) = deploy_syscall(
-        Locking::TEST_CLASS_HASH.try_into().unwrap(), 0, ArrayTrait::new().span(), false
+        SFLocking::TEST_CLASS_HASH.try_into().unwrap(), 0, ArrayTrait::new().span(), false
     )
         .unwrap();
 
@@ -63,18 +64,17 @@ fn deploy_erc20() -> (
         other_caller, 
         erc20_token, 
         erc20_address,
-        ILockingDispatcher { contract_address: locking_address }, 
+        ISFLockingDispatcher { contract_address: locking_address }, 
         locking_address
     )
 }
 
 
-fn create_lock(
+fn lock_lock(
     locking_address: ContractAddress,
     owner: ContractAddress,
     token: ContractAddress,
     amount: u256,
-    start: u64,
     tge: u64,
     is_vesting: bool,
     tge_percent: u256,
@@ -85,19 +85,17 @@ fn create_lock(
     owner.serialize(ref calldata);
     token.serialize(ref calldata);
     amount.serialize(ref calldata); 
-    start.serialize(ref calldata); 
     tge.serialize(ref calldata); 
     is_vesting.serialize(ref calldata); 
     tge_percent.serialize(ref calldata);
     vesting_time.serialize(ref calldata); 
     vesting_percent.serialize(ref calldata);
     
-    let locking = ILockingDispatcher { contract_address: locking_address };
-    locking.create(
+    let locking = ISFLockingDispatcher { contract_address: locking_address };
+    locking.lock(
         owner,
         token,
         amount,
-        start,
         tge,
         is_vesting,
         tge_percent,
@@ -108,7 +106,9 @@ fn create_lock(
 
 #[test]
 #[available_gas(20000000)]
-fn test_create_lock() {
+#[should_panic(expected: ('InvalidVesting', 'ENTRYPOINT_FAILED', ))]
+fn test_lock_lock_invalid_vesting() {
+    let init_supply = 1_000_000_u256;
     let (
         caller, 
         other_caller, 
@@ -116,19 +116,85 @@ fn test_create_lock() {
         erc20_address, 
         locking, 
         locking_address
-    ) = deploy_erc20();
-    let amount: u256 = 2000_u256;
+    ) = deploy_erc20(init_supply);
+
+    let amount: u256 = init_supply;
 
     let current_time: u64 = get_block_timestamp();
 
     erc20_token.approve(locking_address, amount);
 
-    create_lock(
+    lock_lock(
         locking_address: locking_address,
         owner: caller,
         token: erc20_address,
         amount: amount,
-        start: current_time,
+        tge: current_time + 10,
+        is_vesting: true,
+        tge_percent: 50_000,
+        vesting_time: array![],
+        vesting_percent: array![50_000],
+    );
+}
+
+#[test]
+#[available_gas(20000000)]
+#[should_panic(expected: ('MustEq100%', 'ENTRYPOINT_FAILED', ))]
+fn test_lock_lock_invalid_vestting_percent() {
+    let init_supply = 1_000_000_u256;
+    let (
+        caller, 
+        other_caller, 
+        erc20_token, 
+        erc20_address, 
+        locking, 
+        locking_address
+    ) = deploy_erc20(init_supply);
+
+    let amount: u256 = init_supply;
+
+    let current_time: u64 = get_block_timestamp();
+
+    erc20_token.approve(locking_address, amount);
+
+    lock_lock(
+        locking_address: locking_address,
+        owner: caller,
+        token: erc20_address,
+        amount: amount,
+        tge: current_time + 10,
+        is_vesting: true,
+        tge_percent: 50_000,
+        vesting_time: array![6000],
+        vesting_percent: array![50_001],
+    );
+}
+
+
+#[test]
+#[available_gas(20000000)]
+fn test_lock_lock_no_vesting_success() {
+    let init_supply = 1_000_000_u256;
+    let (
+        caller, 
+        other_caller, 
+        erc20_token, 
+        erc20_address, 
+        locking, 
+        locking_address
+    ) = deploy_erc20(init_supply);
+
+    let amount: u256 = init_supply;
+
+    let current_time: u64 = get_block_timestamp();
+
+    erc20_token.approve(locking_address, amount);
+
+    lock_lock(
+        locking_address: locking_address,
+        owner: caller,
+        token: erc20_address,
+        amount: amount,
         tge: current_time + 10,
         is_vesting: false,
         tge_percent: 100_000,
@@ -136,61 +202,361 @@ fn test_create_lock() {
         vesting_percent: array![],
     );
 
-    // erc20_token.approve(locker_address, amount);
-    // assert(erc20_token.allowance(caller, locker_address) == amount, 'Approve should eq 2000');
-
-    // let end: u64 = current_time + 60;
-
-    // locker.create_lock(erc20_address, amount, end);
-    // assert(locker.get_total_lock() == 1_u256, 'Total lock should eq 1')
-
+    assert(erc20_token.balanceOf(caller) == 0, 'Blance should eq 0');
 }
 
-// #[test]
-// #[available_gas(20000000)]
-// fn test_claim_lock() {
-//     let (caller, erc20_token, erc20_address, locker, locker_address) = setUp();
-//     let amount: u256 = 2000_u256;
+#[test]
+#[available_gas(20000000)]
+fn test_lock_lock_vesting_success() {
+    let init_supply = 1_000_000_u256;
+    let (
+        caller, 
+        other_caller, 
+        erc20_token, 
+        erc20_address, 
+        locking, 
+        locking_address
+    ) = deploy_erc20(init_supply);
 
-//     erc20_token.approve(locker_address, amount);
+    let amount: u256 = init_supply;
 
-//     let current_time: u64 = get_block_timestamp();
-//     let end: u64 = current_time;
+    let current_time: u64 = get_block_timestamp();
 
-//     locker.create_lock(erc20_address, amount, end);
-//     locker.claim_lock(0_u256);
-// }
+    erc20_token.approve(locking_address, amount);
 
-// #[test]
-// #[available_gas(20000000)]
-// #[should_panic(expected: ('LockNotEnd', 'ENTRYPOINT_FAILED', ))]
-// fn test_claim_lock_err_not_end() {
-//     let (caller, erc20_token, erc20_address, locker, locker_address) = setUp();
-//     let amount: u256 = 2000_u256;
+    lock_lock(
+        locking_address: locking_address,
+        owner: caller,
+        token: erc20_address,
+        amount: amount,
+        tge: current_time + 10,
+        is_vesting: true,
+        tge_percent: 50_000,
+        vesting_time: array![6000],
+        vesting_percent: array![50_000],
+    );
 
-//     erc20_token.approve(locker_address, amount);
+    assert(erc20_token.balanceOf(caller) == 0, 'Blance should eq 0');
+}
 
-//     let current_time: u64 = get_block_timestamp();
-//     let end: u64 = current_time + 60;
+#[test]
+#[available_gas(20000000)]
+#[should_panic(expected: ('InvalidLockId', 'ENTRYPOINT_FAILED'))]
+fn test_unlock_invalid_lock() {
+    let init_supply = 1_000_000_u256;
+    let (
+        caller, 
+        other_caller, 
+        erc20_token, 
+        erc20_address, 
+        locking, 
+        locking_address
+    ) = deploy_erc20(init_supply);
 
-//     locker.create_lock(erc20_address, amount, end);
-//     locker.claim_lock(0_u256);
-// }
+    let amount: u256 = init_supply;
 
-// #[test]
-// #[available_gas(20000000)]
-// #[should_panic(expected: ('LockClaimed', 'ENTRYPOINT_FAILED', ))]
-// fn test_claim_lock_err_claimed() {
-//     let (caller, erc20_token, erc20_address, locker, locker_address) = setUp();
-//     let amount: u256 = 2000_u256;
+    let current_time: u64 = get_block_timestamp();
 
-//     erc20_token.approve(locker_address, amount);
+    erc20_token.approve(locking_address, amount);
 
-//     let current_time: u64 = get_block_timestamp();
-//     let end: u64 = current_time;
+    lock_lock(
+        locking_address: locking_address,
+        owner: caller,
+        token: erc20_address,
+        amount: amount,
+        tge: current_time + 10,
+        is_vesting: true,
+        tge_percent: 50_000,
+        vesting_time: array![6000],
+        vesting_percent: array![50_000],
+    );
 
-//     locker.create_lock(erc20_address, amount, end);
+    locking.unlock(erc20_address, 1);
+}
 
-//     locker.claim_lock(0_u256);
-//     locker.claim_lock(0_u256);
-// }
+#[test]
+#[available_gas(20000000)]
+#[should_panic(expected: ('Unauthorzied', 'ENTRYPOINT_FAILED'))]
+fn test_unlock_unauthorzied_lock() {
+    let init_supply = 1_000_000_u256;
+    let (
+        caller, 
+        other_caller, 
+        erc20_token, 
+        erc20_address, 
+        locking, 
+        locking_address
+    ) = deploy_erc20(init_supply);
+
+    let amount: u256 = init_supply;
+
+    let current_time: u64 = get_block_timestamp();
+
+    erc20_token.approve(locking_address, amount);
+
+    lock_lock(
+        locking_address: locking_address,
+        owner: caller,
+        token: erc20_address,
+        amount: amount,
+        tge: current_time + 10,
+        is_vesting: true,
+        tge_percent: 50_000,
+        vesting_time: array![6000],
+        vesting_percent: array![50_000],
+    );
+
+    set_contract_address(other_caller);
+    locking.unlock(erc20_address, 0);
+}
+
+#[test]
+#[available_gas(20000000)]
+#[should_panic(expected: ('NotTimeTounlock', 'ENTRYPOINT_FAILED'))]
+fn test_unlock_invalid_unlock_time() {
+    let init_supply = 1_000_000_u256;
+    let (
+        caller, 
+        other_caller, 
+        erc20_token, 
+        erc20_address, 
+        locking, 
+        locking_address
+    ) = deploy_erc20(init_supply);
+
+    let amount: u256 = init_supply;
+
+    let current_time: u64 = get_block_timestamp();
+
+    erc20_token.approve(locking_address, amount);
+
+    lock_lock(
+        locking_address: locking_address,
+        owner: caller,
+        token: erc20_address,
+        amount: amount,
+        tge: current_time + 10,
+        is_vesting: true,
+        tge_percent: 50_000,
+        vesting_time: array![6000],
+        vesting_percent: array![50_000],
+    );
+
+    locking.unlock(erc20_address, 0);
+}
+
+#[test]
+#[available_gas(20000000)]
+fn test_unlock_lock_no_vesting_success() {
+    let init_supply = 1_000_000_u256;
+    let (
+        caller, 
+        other_caller, 
+        erc20_token, 
+        erc20_address, 
+        locking, 
+        locking_address
+    ) = deploy_erc20(init_supply);
+
+    let amount: u256 = init_supply;
+
+    let current_time: u64 = get_block_timestamp();
+
+    erc20_token.approve(locking_address, amount);
+
+    lock_lock(
+        locking_address: locking_address,
+        owner: caller,
+        token: erc20_address,
+        amount: amount,
+        tge: current_time + 10,
+        is_vesting: true,
+        tge_percent: 100_000,
+        vesting_time: array![],
+        vesting_percent: array![],
+    );
+    
+    assert(erc20_token.balanceOf(locking_address) == init_supply, 'Balance should eq init supply');
+
+    set_block_timestamp(current_time + 10);
+
+    locking.unlock(erc20_address, 0);
+
+    assert(erc20_token.balanceOf(caller) == init_supply, 'Balance should eq init supply');
+}
+
+#[test]
+#[available_gas(20000000)]
+#[should_panic(expected: ('unlocked', 'ENTRYPOINT_FAILED'))]
+fn test_unlock_lock_no_vesting_twince() {
+    let init_supply = 1_000_000_u256;
+    let (
+        caller, 
+        other_caller, 
+        erc20_token, 
+        erc20_address, 
+        locking, 
+        locking_address
+    ) = deploy_erc20(init_supply);
+
+    let amount: u256 = init_supply;
+
+    let current_time: u64 = get_block_timestamp();
+
+    erc20_token.approve(locking_address, amount);
+
+    lock_lock(
+        locking_address: locking_address,
+        owner: caller,
+        token: erc20_address,
+        amount: amount,
+        tge: current_time + 10,
+        is_vesting: false,
+        tge_percent: 100_000,
+        vesting_time: array![],
+        vesting_percent: array![],
+    );
+    
+    assert(erc20_token.balanceOf(locking_address) == init_supply, 'Balance should eq init supply');
+
+    set_block_timestamp(current_time + 10);
+
+    locking.unlock(erc20_address, 0);
+
+    assert(erc20_token.balanceOf(caller) == init_supply, 'Balance should eq init supply');
+
+    locking.unlock(erc20_address, 0);
+}
+
+#[test]
+#[available_gas(20000000)]
+#[should_panic(expected: ('NotTimeTounlockVesting', 'ENTRYPOINT_FAILED'))]
+fn test_unlock_lock_vesting_not_time_unlock() {
+    let init_supply = 1_000_000_u256;
+    let (
+        caller, 
+        other_caller, 
+        erc20_token, 
+        erc20_address, 
+        locking, 
+        locking_address
+    ) = deploy_erc20(init_supply);
+
+    let amount: u256 = init_supply;
+
+    let current_time: u64 = get_block_timestamp();
+
+    erc20_token.approve(locking_address, amount);
+
+    lock_lock(
+        locking_address: locking_address,
+        owner: caller,
+        token: erc20_address,
+        amount: amount,
+        tge: current_time + 10,
+        is_vesting: true,
+        tge_percent: 50_000,
+        vesting_time: array![6000],
+        vesting_percent: array![50_000],
+    );
+    
+    assert(erc20_token.balanceOf(locking_address) == init_supply, 'Balance should eq init supply');
+
+    set_block_timestamp(current_time + 10);
+
+    locking.unlock(erc20_address, 0);
+    assert(erc20_token.balanceOf(caller) == init_supply / 2, 'Balance should eq 1/2 init');
+
+    locking.unlock(erc20_address, 0);
+}
+
+#[test]
+#[available_gas(20000000)]
+#[should_panic(expected: ('unlockedAllVesting', 'ENTRYPOINT_FAILED'))]
+fn test_unlock_lock_vesting_unlock_over_vesting() {
+    let init_supply = 1_000_000_u256;
+    let (
+        caller, 
+        other_caller, 
+        erc20_token, 
+        erc20_address, 
+        locking, 
+        locking_address
+    ) = deploy_erc20(init_supply);
+
+    let amount: u256 = init_supply;
+
+    let current_time: u64 = get_block_timestamp();
+
+    erc20_token.approve(locking_address, amount);
+
+    lock_lock(
+        locking_address: locking_address,
+        owner: caller,
+        token: erc20_address,
+        amount: amount,
+        tge: current_time + 10,
+        is_vesting: true,
+        tge_percent: 50_000,
+        vesting_time: array![6000],
+        vesting_percent: array![50_000],
+    );
+    
+    assert(erc20_token.balanceOf(locking_address) == init_supply, 'Balance should eq init supply');
+
+    set_block_timestamp(current_time + 10);
+
+    locking.unlock(erc20_address, 0);
+    assert(erc20_token.balanceOf(caller) == init_supply / 2, 'Balance should eq 1/2 init');
+
+    set_block_timestamp(current_time + 10 + 6000);
+
+    locking.unlock(erc20_address, 0);
+    assert(erc20_token.balanceOf(caller) == init_supply, 'Balance should eq init supply');
+
+    locking.unlock(erc20_address, 0);
+}
+
+#[test]
+#[available_gas(20000000)]
+fn test_unlock_lock_vesting_success() {
+    let init_supply = 1_000_000_u256;
+    let (
+        caller, 
+        other_caller, 
+        erc20_token, 
+        erc20_address, 
+        locking, 
+        locking_address
+    ) = deploy_erc20(init_supply);
+
+    let amount: u256 = init_supply;
+
+    let current_time: u64 = get_block_timestamp();
+
+    erc20_token.approve(locking_address, amount);
+
+    lock_lock(
+        locking_address: locking_address,
+        owner: caller,
+        token: erc20_address,
+        amount: amount,
+        tge: current_time + 10,
+        is_vesting: true,
+        tge_percent: 50_000,
+        vesting_time: array![6000],
+        vesting_percent: array![50_000],
+    );
+    
+    assert(erc20_token.balanceOf(locking_address) == init_supply, 'Balance should eq init supply');
+
+    set_block_timestamp(current_time + 10);
+
+    locking.unlock(erc20_address, 0);
+    assert(erc20_token.balanceOf(caller) == init_supply / 2, 'Balance should eq 1/2 init');
+
+    set_block_timestamp(current_time + 10 + 6000);
+
+    locking.unlock(erc20_address, 0);
+    assert(erc20_token.balanceOf(caller) == init_supply, 'Balance should eq init supply');
+}
