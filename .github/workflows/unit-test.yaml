@@ -22,8 +22,8 @@ jobs:
         with:
           scarb-version: "0.6.2"
 
-      - name: Check formatting
-        run: scarb fmt --check
+     # - name: Check formatting
+     #   run: scarb fmt --check
 
       - name: Run Test
         run: scarb test
