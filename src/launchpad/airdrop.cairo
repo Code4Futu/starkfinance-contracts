@@ -18,6 +18,9 @@ mod Airdrop {
     use rules_account::account::Account;
     use rules_account::account::Account::InternalTrait as AccountInternalTrait;
     use ecdsa::check_ecdsa_signature;
+    use pedersen::PedersenTrait;
+    use hash::{HashStateTrait, HashStateExTrait};
+    use box::BoxTrait;
 
     use starkfinance::interfaces::token::erc20::{IERC20, IERC20Dispatcher, IERC20DispatcherTrait};
     use starkfinance::utils::constants::{
@@ -27,7 +30,9 @@ mod Airdrop {
         DOMAIN_TYPE_HASH, 
         ERC165_ACCOUNT_INTERFACE_ID
     };
-    use starkfinance::interfaces::launchpad::airdrop::{ISFAirdrop, AirdropStats, AirdropStruct};
+    use starkfinance::interfaces::launchpad::airdrop::{ISFAirdrop, AirdropStats, AirdropStruct, SimpleStruct};
+
+    const ONE_HUNDRED_PERCENT: u256 = 100_000_u256;
 
     #[storage]
     struct Storage {
@@ -56,13 +61,7 @@ mod Airdrop {
         claimer: ContractAddress,
         amount: u256,
         timestamp: u64
-    }
-
-    const ONE_HUNDRED_PERCENT: u256 = 100_000_u256;
-    const AIRDROP_TYPE_HASH: felt252 = selector!("AirdropStruct(address:felt252)");
-
-    const SIGNATURE_R: felt252 = '0x436369c6d3049b';
-    const SIGNATURE_S: felt252 = '0x64e17515627d9f';
+    }   
 
     #[constructor]
     fn constructor(
@@ -121,11 +120,11 @@ mod Airdrop {
             assert(total_claimed < total_airdrop_amount, 'Ended');
 
         
-            assert(
-                signature.at(0).clone() == SIGNATURE_R 
-                && signature.at(1).clone() == SIGNATURE_S,
-                'InvalidSignature'
-            );
+            // assert(
+            //     signature.at(0).clone() == SIGNATURE_R 
+            //     && signature.at(1).clone() == SIGNATURE_S,
+            //     'InvalidSignature'
+            // );
 
             let total_round = self.total_vesting.read();
             let caller = get_caller_address(); 
@@ -154,18 +153,13 @@ mod Airdrop {
             });
         }
 
-        fn compute_message_hash (
-            self: @ContractState, account: ContractAddress
-        ) -> felt252 {
-            return self._compute_hash(account, self.verifier.read());
+        fn compute_message_hash(self: @ContractState, simple: SimpleStruct) -> felt252 {
+            simple.some_felt252.print();
+            simple.some_u128.print();
+            simple.get_message_hash().print();
+            simple.get_message_hash()
         }
 
-        fn verify_signature(
-            self: @ContractState, account: ContractAddress, signature: Array<felt252>
-        ) -> bool {
-            let hash: felt252 = self.compute_message_hash(account);
-            self._is_valid_signature(hash, signature.span())
-        }
     }
 
     #[generate_trait]
@@ -173,57 +167,83 @@ mod Airdrop {
         fn _get_allocation(self: @ContractState) -> u256 {
             return self.total_airdrop_amount.read() / self.total_airdrop.read();
         }
-
-        fn _get_domain_hash(self: @ContractState) -> felt252 {
-            let mut hash = pedersen::pedersen(0, DOMAIN_TYPE_HASH);
-            hash = pedersen::pedersen(hash, DOMAIN_NAME);
-            hash = pedersen::pedersen(hash, get_tx_info().unbox().chain_id);
-            hash = pedersen::pedersen(hash, DOMAIN_VERSION);
-            hash = pedersen::pedersen(hash, contract_address_to_felt252(get_contract_address()));
-            pedersen::pedersen(hash, 5)
-        }
-
-        fn _typed_data_hash(self: @ContractState, account: ContractAddress) -> felt252 {
-            let mut hash = pedersen::pedersen(0, AIRDROP_TYPE_HASH);
-            hash = pedersen::pedersen(hash, account.into());
-            pedersen::pedersen(hash, 2)
-        }
-        
-        fn _compute_hash(
-            self: @ContractState, account: ContractAddress, signer: ContractAddress
-        ) -> felt252 {
-            let mut hash = pedersen::pedersen(0, STARKNET_MESSAGE_PREFIX);
-            hash = pedersen::pedersen(hash, self._get_domain_hash());
-            hash = pedersen::pedersen(hash, signer.into());
-            hash = pedersen::pedersen(hash, self._typed_data_hash(account));
-            pedersen::pedersen(hash, 4)
-        }
-
-        fn _is_valid_signature(
-            self: @ContractState, hash: felt252, signature: Span<felt252>
-        ) -> bool {
-            let valid_length = signature.len() == 2_u32;
-            if valid_length {
-                check_ecdsa_signature(
-                    hash, self.verifier.read().into(), *signature.at(0_u32), *signature.at(1_u32)
-                )
-            } else {
-                false
-            }
-        }
-
-        fn _verify_signature(
-            self: @ContractState, 
-            hash: felt252, 
-            signature: Array<felt252>, 
-            account: ContractAddress
-        ) {
-            assert(
-                self._is_valid_signature(hash, signature.span()),
-                'Invalid  signature'
-            );
-        }
-
-        
     }
+
+    const STARKNET_DOMAIN_TYPE_HASH: felt252 =
+    selector!("StarkNetDomain(name:felt,version:felt,chainId:felt)");
+
+    const SIMPLE_STRUCT_TYPE_HASH: felt252 =
+        selector!("SimpleStruct(some_felt252:felt,some_u128:u128)");
+
+    #[derive(Drop, Copy, Hash)]
+    struct StarknetDomain {
+        name: felt252,
+        version: felt252,
+        chain_id: felt252,
+    }
+
+    trait IStructHash<T> {
+        fn hash_struct(self: @T) -> felt252;
+    }
+
+    trait IOffchainMessageHash<T> {
+        fn get_message_hash(self: @T) -> felt252;
+    }
+
+    impl OffchainMessageHashSimpleStruct of IOffchainMessageHash<SimpleStruct> {
+        fn get_message_hash(self: @SimpleStruct) -> felt252 {
+            let domain = StarknetDomain {
+                name: 'dappName', version: 1, chain_id: get_tx_info().unbox().chain_id
+            };
+            let mut state = PedersenTrait::new(0);
+            state = state.update_with('StarkNet Message');
+            state = state.update_with(domain.hash_struct());
+            // This can be a field within the struct, it doesn't have to be get_caller_address().
+            state = state.update_with(get_caller_address());
+            state = state.update_with(self.hash_struct());
+            // Hashing with the amount of elements being hashed 
+            state = state.update_with(4);
+            state.finalize()
+        }
+    }
+
+    impl StructHashStarknetDomain of IStructHash<StarknetDomain> {
+        fn hash_struct(self: @StarknetDomain) -> felt252 {
+            let mut state = PedersenTrait::new(0);
+            state = state.update_with(STARKNET_DOMAIN_TYPE_HASH);
+            state = state.update_with(*self);
+            state = state.update_with(4);
+            state.finalize()
+        }
+    }
+
+    impl StructHashSimpleStruct of IStructHash<SimpleStruct> {
+        fn hash_struct(self: @SimpleStruct) -> felt252 {
+            let mut state = PedersenTrait::new(0);
+            state = state.update_with(SIMPLE_STRUCT_TYPE_HASH);
+            state = state.update_with(*self);
+            state = state.update_with(3);
+            state.finalize()
+        }
+    }
+
 }
+
+// use box::BoxTrait;
+// use starknet::{
+//     contract_address_const, get_tx_info, get_caller_address, testing::set_caller_address
+// };
+// use pedersen::PedersenTrait;
+// use hash::{HashStateTrait, HashStateExTrait};
+
+// use starkfinance::interfaces::launchpad::airdrop::{SimpleStruct};
+
+// #[test]
+// #[available_gas(2000000)]
+// fn test_valid_hash() {
+//     // This value was computed using StarknetJS
+//     let message_hash = 0x1e739b39f83b38f182edaed69f730f18eff802d3ef44be91c3733cdcab6de2f;
+//     let simple_struct = SimpleStruct { some_felt252: 712, some_u128: 42 };
+//     set_caller_address(contract_address_const::<420>());
+//     assert(simple_struct.get_message_hash() == message_hash, 'Hash should be valid');
+// }

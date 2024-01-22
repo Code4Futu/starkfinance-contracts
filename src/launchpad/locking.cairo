@@ -137,14 +137,14 @@ use starknet::{
                 tge_percent,
             });
 
-            lock_id += 1;
-            self.total_lock.write(token, lock_id);
-            
             self.emit(Created { 
                 token, 
                 lock_id, 
                 timestamp: get_block_timestamp() 
             });
+
+            lock_id += 1;
+            self.total_lock.write(token, lock_id);
         }
 
         fn unlock(ref self: ContractState, token: ContractAddress, lock_id: u256) {

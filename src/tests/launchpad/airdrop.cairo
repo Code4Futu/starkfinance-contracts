@@ -13,7 +13,7 @@ use option::OptionTrait;
 
 use starknet::{contract_address_try_from_felt252, get_block_timestamp, contract_address_const};
 use starknet::contract_address::ContractAddress;
-use starknet::testing::{set_contract_address, pop_log, set_block_timestamp};
+use starknet::testing::{set_contract_address, pop_log, set_block_timestamp, set_caller_address};
 use starknet::syscalls::deploy_syscall;
 use starknet::SyscallResultTrait;
 use starknet::class_hash::{Felt252TryIntoClassHash, class_hash_to_felt252}; 
@@ -23,7 +23,7 @@ use rules_account::account::{ AccountABIDispatcher, AccountABIDispatcherTrait };
 use starkfinance::interfaces::token::erc20::{IERC20Dispatcher, IERC20DispatcherTrait};
 use starkfinance::mocks::erc20::{ERC20};
 use starkfinance::interfaces::launchpad::airdrop::{
-    ISFAirdropDispatcher, ISFAirdropDispatcherTrait,
+    ISFAirdropDispatcher, ISFAirdropDispatcherTrait, SimpleStruct
 };
 use starkfinance::launchpad::airdrop::{Airdrop};
 
@@ -105,44 +105,55 @@ fn test_signature() {
 }
 
 
-// #[test]
-// #[available_gas(20000000)]
-// fn test_deploy_airdrop() {
-//     let (
-//         caller, 
-//         other_caller, 
-//         erc20_token, 
-//         erc20_address, 
-//     ) = setUp();
-
-//     let start = get_block_timestamp();
-//     let total_airdrop = 100;
-//     let total_airdrop_amount = 5000;  
-//     let vesting_time = array![0, 3600];
-//     let vesting_percent = array![50000,50000];
-
-//     let (airdrop, airdrop_address) = deploy_airdrop(
-//         erc20_address,
-//         start,
-//         total_airdrop,
-//         total_airdrop_amount,
-//         vesting_time,
-//         vesting_percent
-//     );
-
-//     set_contract_address(caller);
-//     erc20_token.mint(total_airdrop_amount);
-
-//     erc20_token.approve(airdrop_address, total_airdrop_amount);
-//     assert(erc20_token.allowance(caller, airdrop_address) == total_airdrop_amount, 'Approve should eq');
-
-//     erc20_token.transfer(airdrop_address, total_airdrop_amount);
-//     assert(erc20_token.balanceOf(airdrop_address) == total_airdrop_amount, 'No airdrop token in pool');
-// }
-
 #[test]
 #[available_gas(20000000)]
-fn test_claim_airdrop() {
+fn test_deploy_airdrop() {
+    let (
+        caller, 
+        other_caller, 
+        erc20_token, 
+        erc20_address, 
+    ) = setUp();
+
+    let start = get_block_timestamp();
+    let total_airdrop = 100;
+    let total_airdrop_amount = 5000;  
+    let vesting_time = array![0, 3600];
+    let vesting_percent = array![50000,50000];
+
+    let (airdrop, airdrop_address) = deploy_airdrop(
+        erc20_address,
+        start,
+        total_airdrop,
+        total_airdrop_amount,
+        vesting_time,
+        vesting_percent
+    );
+
+    // set_contract_address(caller);
+    // erc20_token.mint(total_airdrop_amount);
+
+    // erc20_token.approve(airdrop_address, total_airdrop_amount);
+    // assert(erc20_token.allowance(caller, airdrop_address) == total_airdrop_amount, 'Approve should eq');
+
+    // erc20_token.transfer(airdrop_address, total_airdrop_amount);
+    // assert(erc20_token.balanceOf(airdrop_address) == total_airdrop_amount, 'No airdrop token in pool');
+
+    set_contract_address(contract_address_const::<420>());
+    let hash = airdrop.compute_message_hash(
+        // contract_address_try_from_felt252(0x02300fC66a817547f90A96Bf45A6029033C67392F513BC8e7e05aDe0e92A36b8).unwrap()
+        SimpleStruct {
+            some_felt252: 712,
+            some_u128: 42,
+        }
+    );
+
+    hash.print();
+}
+
+// #[test]
+// #[available_gas(20000000)]
+// fn test_claim_airdrop() {
     // let (
     //     caller, 
     //     other_caller, 
@@ -184,7 +195,7 @@ fn test_claim_airdrop() {
     // let balance = erc20_token.balanceOf(caller);
     // // balance.print();
     // assert(balance == airdrop.get_user_stats(caller).at(2).clone(), 'InvalidAirdropAmount');
-}
+// }
 
 
 // #[test]
