@@ -13,7 +13,7 @@ struct Lock {
 #[starknet::interface]
 trait ISFLocking<T> {
     fn get_lock(self: @T, token: ContractAddress, lock_id: u256) -> (Lock, Array<u64>, Array<u256>);
-    fn get_claimed_count(self: @T, token: ContractAddress, lock_id: u256, spender: ContractAddress) -> u32;
+    fn get_unlocked_count(self: @T, token: ContractAddress, lock_id: u256, spender: ContractAddress) -> u32;
     fn lock(
         ref self: T,
         owner: ContractAddress,

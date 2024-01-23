@@ -27,7 +27,7 @@ use starknet::{
         total_vesting: LegacyMap::<(ContractAddress, u256), u32>, // (token_address, lock_id) -> total_vesting
         vesting_time: LegacyMap::<(ContractAddress, u256, u32), u64>, // (token_address, lock_id, index) -> vesting_time
         vesting_percent: LegacyMap::<(ContractAddress, u256, u32), u256>, // (token_address, lock_id, index) -> vesting_percent
-        claimed_count: LegacyMap::<(ContractAddress, u256, ContractAddress), u32>, // (token_address, lock_id, user_address) -> claimed count
+        unlocked_count: LegacyMap::<(ContractAddress, u256, ContractAddress), u32>, // (token_address, lock_id, user_address) -> claimed count
     }
 
     #[event]
@@ -82,8 +82,8 @@ use starknet::{
             (lock, vesting_time, vesting_percent)
         }
 
-        fn get_claimed_count(self: @ContractState, token: ContractAddress, lock_id: u256, spender: ContractAddress) -> u32 {
-            self.claimed_count.read((token, lock_id, spender))
+        fn get_unlocked_count(self: @ContractState, token: ContractAddress, lock_id: u256, spender: ContractAddress) -> u32 {
+            self.unlocked_count.read((token, lock_id, spender))
         }
 
         fn lock(
@@ -158,28 +158,28 @@ use starknet::{
 
             assert(caller == lock.owner, 'Unauthorzied');
 
-            let claimed_count: u32 = self.claimed_count.read((token, lock_id, caller));
+            let unlocked_count: u32 = self.unlocked_count.read((token, lock_id, caller));
 
             let is_vesting: bool = lock.is_vesting;
             
             let mut amount: u256 = 0;
-            if (claimed_count == 0) {
-                assert(current_time >= lock.tge, 'NotTimeToClaim');
+            if (unlocked_count == 0) {
+                assert(current_time >= lock.tge, 'NotTimeToUnlock');
                 amount = lock.amount;
                 if(is_vesting) { 
                     amount = lock.amount * lock.tge_percent / ONE_HUNDRED_PERCENT;
                 }
             } else {
                 if(is_vesting) {
-                    assert(claimed_count > 0 && claimed_count <= self.total_vesting.read((token, lock_id)), 'ClaimedAllVesting');
-                    assert(current_time >= lock.tge + self.vesting_time.read((token, lock_id, claimed_count - 1)), 'NotTimeToClaimVesting');
-                    amount = lock.amount * self.vesting_percent.read((token, lock_id, claimed_count - 1)) / ONE_HUNDRED_PERCENT;
+                    assert(unlocked_count > 0 && unlocked_count <= self.total_vesting.read((token, lock_id)), 'UnlockedAllVesting');
+                    assert(current_time >= lock.tge + self.vesting_time.read((token, lock_id, unlocked_count - 1)), 'NotTimeToUnlockVesting');
+                    amount = lock.amount * self.vesting_percent.read((token, lock_id, unlocked_count - 1)) / ONE_HUNDRED_PERCENT;
                 } else {
-                    assert(false, 'Claimed');
+                    assert(false, 'Unlocked');
                 }
             }
 
-            self.claimed_count.write((token, lock_id, caller), claimed_count + 1);
+            self.unlocked_count.write((token, lock_id, caller), unlocked_count + 1);
 
             if(amount > 0) {
                 InternalFunctions::_transfer_token(token, this_contract, caller, amount);

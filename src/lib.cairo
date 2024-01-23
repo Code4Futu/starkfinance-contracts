@@ -15,7 +15,6 @@ mod launchpad {
     mod launchpad;
     mod airdrop;
     mod locking;
-    // mod simple;
 }
 mod utils {
     mod constants;
@@ -31,8 +30,8 @@ mod mocks {
 #[cfg(test)]
 mod tests {
     mod launchpad {
-        // mod launchpad;
+        mod launchpad;
         mod airdrop;
-        // mod locking;
+        mod locking;
     }
 }

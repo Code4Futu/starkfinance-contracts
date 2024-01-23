@@ -312,7 +312,7 @@ fn test_unlock_unauthorzied_lock() {
 
 #[test]
 #[available_gas(20000000)]
-#[should_panic(expected: ('NotTimeTounlock', 'ENTRYPOINT_FAILED'))]
+#[should_panic(expected: ('NotTimeToUnlock', 'ENTRYPOINT_FAILED'))]
 fn test_unlock_invalid_unlock_time() {
     let init_supply = 1_000_000_u256;
     let (
@@ -387,7 +387,7 @@ fn test_unlock_lock_no_vesting_success() {
 
 #[test]
 #[available_gas(20000000)]
-#[should_panic(expected: ('unlocked', 'ENTRYPOINT_FAILED'))]
+#[should_panic(expected: ('Unlocked', 'ENTRYPOINT_FAILED'))]
 fn test_unlock_lock_no_vesting_twince() {
     let init_supply = 1_000_000_u256;
     let (
@@ -430,7 +430,7 @@ fn test_unlock_lock_no_vesting_twince() {
 
 #[test]
 #[available_gas(20000000)]
-#[should_panic(expected: ('NotTimeTounlockVesting', 'ENTRYPOINT_FAILED'))]
+#[should_panic(expected: ('NotTimeToUnlockVesting', 'ENTRYPOINT_FAILED'))]
 fn test_unlock_lock_vesting_not_time_unlock() {
     let init_supply = 1_000_000_u256;
     let (
@@ -472,7 +472,7 @@ fn test_unlock_lock_vesting_not_time_unlock() {
 
 #[test]
 #[available_gas(20000000)]
-#[should_panic(expected: ('unlockedAllVesting', 'ENTRYPOINT_FAILED'))]
+#[should_panic(expected: ('UnlockedAllVesting', 'ENTRYPOINT_FAILED'))]
 fn test_unlock_lock_vesting_unlock_over_vesting() {
     let init_supply = 1_000_000_u256;
     let (

@@ -23,3 +23,4 @@ venv
 
 starknet-artifacts
 scripts
+.snfoundry_cache

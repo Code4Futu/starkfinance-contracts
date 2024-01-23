@@ -9,7 +9,6 @@ casm = true
 
 [dependencies]
 starknet = "2.4.1"
-rules_account = { git = "https://github.com/ruleslabs/starknet-rules-account.git" }
 
 [tool.snforge]
 exit_first = true
