@@ -70,6 +70,7 @@ mod Airdrop {
         verifier: ContractAddress,
         token: ContractAddress,
         start: u64,
+        end: u64,
         total_airdrop: u256,
         total_airdrop_amount: u256,
         vesting_time: Array<u64>,
@@ -78,6 +79,7 @@ mod Airdrop {
         self.verifier.write(verifier);
         self.token.write(token);
         self.start.write(start);
+        self.end.write(end);
         self.total_airdrop.write(total_airdrop);
         self.total_airdrop_amount.write(total_airdrop_amount);
 
@@ -99,14 +101,14 @@ mod Airdrop {
     impl ISFAirdropImp of ISFAirdrop<ContractState> {
         fn get_stats(self: @ContractState) -> AirdropStats {
             AirdropStats {
+                total_airdrop: self.total_airdrop.read(),
+                total_airdrop_amount: self.total_airdrop_amount.read(),
                 total_claimed: self.total_claimed.read(),
-                end: self.end.read()
             }
         }
 
         fn get_user_stats(self: @ContractState, spender: ContractAddress) -> Array<u256> {
             return array![
-                self._get_allocation(),
                 self.user_claim_count.read(spender).into(),
                 self.user_claimed.read(spender),
             ];
@@ -123,9 +125,11 @@ mod Airdrop {
             assert(total_claimed < total_airdrop_amount, 'Ended');
 
             let caller = get_caller_address(); 
-        
-            let hash = AirdropStruct { spender: contract_address_to_felt252(caller), amount: self._get_allocation() }
-                        .get_message_hash();
+
+            let allocation = self.total_airdrop_amount.read() / self.total_airdrop.read();
+
+            // let hash = AirdropStruct { spender: contract_address_to_felt252(caller), amount: allocation }
+            //             .get_message_hash();
             // assert(
             //     ValidateSignature::is_valid_signature(
             //         self.verifier.read(), hash, signature
@@ -134,10 +138,17 @@ mod Airdrop {
 
             let total_round = self.total_vesting.read();
             let user_claim_count = self.user_claim_count.read(caller);
+
             assert(user_claim_count < total_round, 'InvalidVestingRound');
+
+            if(timestamp > self.end.read()) {
+                assert(user_claim_count > 0, 'Ended');
+            }
+            
+
             assert(timestamp >= self.start.read() + self.vesting_time.read(user_claim_count), 'VestingRoundNotStart');
 
-            let allocation: u256 = self._get_allocation() * self.vesting_percent.read(user_claim_count) / ONE_HUNDRED_PERCENT;
+            let allocation: u256 = allocation * self.vesting_percent.read(user_claim_count) / ONE_HUNDRED_PERCENT;
 
             assert(allocation > 0_u256, 'NothingToClaim');
 
@@ -156,13 +167,6 @@ mod Airdrop {
                 amount: allocation, 
                 timestamp 
             });
-        }
-    }
-
-    #[generate_trait]
-    impl StorageImpl of StorageTrait {
-        fn _get_allocation(self: @ContractState) -> u256 {
-            return self.total_airdrop_amount.read() / self.total_airdrop.read();
         }
     }
 

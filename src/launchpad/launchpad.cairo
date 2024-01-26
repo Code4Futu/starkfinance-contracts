@@ -147,6 +147,7 @@ mod SFLaunchpad {
         }
 
         fn get_user_stats(self: @ContractState, spender: ContractAddress) -> UserStats {
+            let (nft_id ,staked_nft, claimed_nft) = self.staked_nft.read(spender);
             UserStats {
                 committed: self._get_user_committed(spender),
                 allocation:  self._get_allocation(spender),
@@ -155,7 +156,10 @@ mod SFLaunchpad {
                 claimed: self.user_claimed.read(spender),
                 claimed_count:  self.user_claim_count.read(spender),
                 last_committed_time: self.last_committed_time.read(spender),
-                claimable: self._get_claimable(spender)
+                claimable: self._get_claimable(spender),
+                staked_nft,
+                nft_id,
+                claimed_nft
             }
         }
 
@@ -238,7 +242,7 @@ mod SFLaunchpad {
             let caller = get_caller_address(); 
             let user_claim_count = self.user_claim_count.read(caller);
             assert(user_claim_count < total_round, 'InvalidVestingRound');
-            assert(timestamp >= self.last_committed_time.read(caller) 
+            assert(timestamp >= self.end.read() 
                 + self.vesting_time.read(user_claim_count), 'VestingRoundNotStart'
             );
 
@@ -295,12 +299,15 @@ mod SFLaunchpad {
         }
 
         fn claim_remaining(ref self: ContractState) {
-            assert(get_block_timestamp() > self.end.read(),  'NotEnd');
+            let timestamp = get_block_timestamp();
+            assert(timestamp > self.end.read(),  'NotEnd');
 
             let caller = get_caller_address();
 
             let remaining = self._get_remaining(caller);
             assert(remaining > 0, 'NothingToClaim');
+
+            assert(timestamp >= self.last_committed_time.read(caller) + 259200, 'ClaimTimeNotStart');
             
             self.user_claimed_remaining
                 .write(caller, self.user_claimed_remaining.read(caller) + remaining);

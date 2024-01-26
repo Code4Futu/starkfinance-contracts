@@ -19,6 +19,7 @@ mod ERC721 {
         token_approvals: LegacyMap::<u256, ContractAddress>,
         /// (owner, operator)
         operator_approvals: LegacyMap::<(ContractAddress, ContractAddress), bool>,
+        total_supply: u256
     }
 
     #[event]
@@ -55,8 +56,8 @@ mod ERC721 {
 
     #[external(v0)]
     impl IERC721Impl of IERC721<ContractState> {
-        fn mint(ref self: ContractState, to: ContractAddress, token_id: u256) {
-            self._mint(to, token_id);
+        fn mint(ref self: ContractState, to: ContractAddress) {
+            self._mint(to);
         }
 
         fn name(self: @ContractState) -> felt252 {
@@ -177,7 +178,8 @@ mod ERC721 {
             self._afterTokenTransfer(from, to, token_id, 1.into());
         }
 
-        fn _mint(ref self: ContractState, to: ContractAddress, token_id: u256) {
+        fn _mint(ref self: ContractState, to: ContractAddress) {
+            let token_id = self.total_supply.read();
             assert(!to.is_zero(), 'ERC721: mint to 0');
             assert(!self._exists(token_id), 'ERC721: already minted');
             self._beforeTokenTransfer(contract_address_const::<0>(), to, token_id, 1.into());
@@ -193,6 +195,8 @@ mod ERC721 {
             }));
 
             self._afterTokenTransfer(contract_address_const::<0>(), to, token_id, 1.into());
+
+            self.total_supply.write(token_id + 1);
         }
 
     

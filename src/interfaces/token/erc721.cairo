@@ -3,7 +3,7 @@ use starknet::ContractAddress;
 #[starknet::interface]
 trait IERC721<TContractState> {
     fn mint(
-        ref self: TContractState, to: ContractAddress, token_id: u256
+        ref self: TContractState, to: ContractAddress
     );
     fn name(self: @TContractState) -> felt252;
     fn symbol(self: @TContractState) -> felt252;

@@ -18,7 +18,10 @@ struct UserStats {
     claimed: u256,
     claimed_count: u32,
     last_committed_time: u64,
-    claimable: u256
+    claimable: u256,
+    staked_nft: bool,
+    nft_id: u256,
+    claimed_nft: bool
 }
 
 #[starknet::interface]
