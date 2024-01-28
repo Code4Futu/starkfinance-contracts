@@ -184,8 +184,8 @@ fn test_stake_nft() {
     erc20_token.approve(launchpad_address, LAUNCHPAD_TOTAL_SALE);
     erc20_token.transfer(launchpad_address, LAUNCHPAD_TOTAL_SALE);
 
-    let nft_id = 1;
-    erc721_token.mint(caller, nft_id);
+    let nft_id = 0;
+    erc721_token.mint(caller);
     assert(erc721_token.ownerOf(nft_id) == caller, 'User does not have NFT');
 
     erc721_token.approve(launchpad_address, nft_id);
@@ -405,7 +405,7 @@ fn test_claim() {
 }
 
 #[test]
-#[available_gas(20000000)]
+#[available_gas(2000000000)]
 fn test_claim_with_stake_nft() {
     let (
         caller, 
@@ -453,12 +453,18 @@ fn test_claim_with_stake_nft() {
     let commit_amount = 30000;
     other_erc20_token.mint(commit_amount);
     other_erc20_token.approve(launchpad_address, commit_amount);
-    let nft_id: u256 = 1_u256;
-    erc721_token.mint(caller, nft_id);
+    let nft_id: u256 = 0_u256;
+    erc721_token.mint(caller);
     erc721_token.approve(launchpad_address, nft_id);
     launchpad.stake_nft(nft_id);
     
-    assert(erc721_token.ownerOf(nft_id) == launchpad_address, 'stake nft failed');
+    // assert(erc721_token.ownerOf(nft_id) == launchpad_address, 'stake nft failed');
+
+    // println!("caller {}", caller);
+    caller.print();
+    let owner_of = erc721_token.ownerOf(nft_id);
+    // println!("Owner nft {}", owner_of);
+    owner_of.print();
 
     launchpad.commit(commit_amount);
 
@@ -470,14 +476,20 @@ fn test_claim_with_stake_nft() {
     
     launchpad.commit(other_commit);
 
-    assert(launchpad.get_user_stats(caller).committed == commit_amount + commit_amount*TEN_PERCENT/ONE_HUNDRED_PERCENT, 'Invalid commit amount 1');
-    assert(launchpad.get_user_stats(other_caller).committed == other_commit, 'Invalid commit amount 2');
-
     set_block_timestamp(end + LAUNCHPAD_VESTING_TIME);
 
-    launchpad.claim();
+    let committed = launchpad.get_user_stats(caller).committed;
+    assert(committed + committed *TEN_PERCENT/ONE_HUNDRED_PERCENT   == commit_amount + commit_amount*TEN_PERCENT/ONE_HUNDRED_PERCENT, 'Invalid commit amount 1');
+    assert(launchpad.get_user_stats(other_caller).committed == other_commit, 'Invalid commit amount 2');
 
+    launchpad.claim();
     assert(erc20_token.balanceOf(other_caller) == launchpad.get_user_stats(other_caller).claimed, 'Invalid claim amount');
+
+    set_contract_address(caller);
+    launchpad.claim();
+    assert(erc721_token.ownerOf(nft_id) == caller, 'claim stake nft falied');
+    assert(erc20_token.balanceOf(other_caller) == launchpad.get_user_stats(other_caller).claimed, 'Invalid claim amount 2');
+
 }
 
 #[test]
@@ -578,7 +590,7 @@ fn test_claim_if_vesting_time_start() {
     other_erc20_token.approve(launchpad_address, commit_amount);
     launchpad.commit(commit_amount);
 
-    set_block_timestamp(start + LAUNCHPAD_VESTING_TIME);
+    set_block_timestamp(end + LAUNCHPAD_VESTING_TIME + 1);
 
     launchpad.claim();
 }

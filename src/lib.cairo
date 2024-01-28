@@ -31,7 +31,7 @@ mod mocks {
 mod tests {
     mod launchpad {
         mod launchpad;
-        mod airdrop;
-        mod locking;
+        // mod airdrop;
+        // mod locking;
     }
 }

@@ -149,7 +149,7 @@ mod SFLaunchpad {
         fn get_user_stats(self: @ContractState, spender: ContractAddress) -> UserStats {
             let (nft_id ,staked_nft, claimed_nft) = self.staked_nft.read(spender);
             UserStats {
-                committed: self._get_user_committed(spender),
+                committed: self.user_committed.read(spender),
                 allocation:  self._get_allocation(spender),
                 deducted: self._get_deducted(spender),
                 remaining: self._get_remaining(spender),
@@ -252,7 +252,7 @@ mod SFLaunchpad {
 
             assert(allocation > 0_u256, 'NothingToClaim');
 
-            let (nft_id ,is_staked, is_claimed) = self.staked_nft.read(caller); 
+            let (nft_id , is_staked, is_claimed) = self.staked_nft.read(caller); 
             if (is_staked && !is_claimed) {
                 self.staked_nft
                     .write(caller, (nft_id, true, true));

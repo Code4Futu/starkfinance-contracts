@@ -1,3 +1,4 @@
+use core::clone::Clone;
 use core::serde::Serde;
 use integer::u256;
 use integer::u256_from_felt252;
@@ -33,6 +34,7 @@ const DECIMALS: u8 = 18_u8;
 
 const ONE_HUNDRED_PERCENT: u256 = 100_000_u256;
 
+
 fn setUp() -> (
         ContractAddress, 
         ContractAddress,
@@ -64,6 +66,7 @@ fn deploy_airdrop(
         verifier: ContractAddress,
         token: ContractAddress,
         start: u64,
+        end: u64,
         total_airdrop: u256,
         total_airdrop_amount: u256,
         vesting_time: Array<u64>,
@@ -73,6 +76,7 @@ fn deploy_airdrop(
     verifier.serialize(ref metadata);
     token.serialize(ref metadata);
     start.serialize(ref metadata);
+    end.serialize(ref metadata);
     total_airdrop.serialize(ref metadata); 
     total_airdrop_amount.serialize(ref metadata);
     vesting_time.serialize(ref metadata); 
@@ -99,6 +103,7 @@ fn test_deploy_airdrop() {
     ) = setUp();
 
     let start = get_block_timestamp();
+    let end = start + 3600;
     let total_airdrop = 100;
     let total_airdrop_amount = 5000;  
     let vesting_time = array![0, 3600];
@@ -108,6 +113,7 @@ fn test_deploy_airdrop() {
         caller,
         erc20_address,
         start,
+        end,
         total_airdrop,
         total_airdrop_amount,
         vesting_time,
@@ -129,51 +135,51 @@ fn test_deploy_airdrop() {
     // assert(airdrop.compute_message_hash(contract_address_const::<712>()) == hash, 'Invalid message hash');
 }
 
-// #[test]
-// #[available_gas(20000000)]
-// fn test_claim_airdrop() {
-    // let (
-    //     caller, 
-    //     other_caller, 
-    //     erc20_token, 
-    //     erc20_address, 
-    // ) = setUp();
-    // let start = get_block_timestamp();
-    // let total_airdrop = 100;
-    // let total_airdrop_amount = 5000;  
-    // let vesting_time = array![0, 3600];
-    // let vesting_percent = array![50000,50000];
+#[test]
+#[available_gas(20000000)]
+fn test_claim_airdrop() {
+    let (
+        caller, 
+        other_caller, 
+        erc20_token, 
+        erc20_address, 
+    ) = setUp();
+    let start = get_block_timestamp();
+    let end = start + 3600;
+    let total_airdrop = 100;
+    let total_airdrop_amount = 5000;  
+    let vesting_time = array![0, 3600];
+    let vesting_percent = array![50000,50000];
 
-    // let (airdrop, airdrop_address) = deploy_airdrop(
-    //     erc20_address,
-    //     start,
-    //     total_airdrop,
-    //     total_airdrop_amount,
-    //     vesting_time,
-    //     vesting_percent
-    // );
+    let (airdrop, airdrop_address) = deploy_airdrop(
+        caller,
+        erc20_address,
+        start,
+        end,
+        total_airdrop,
+        total_airdrop_amount,
+        vesting_time,
+        vesting_percent
+    );
 
-    // set_contract_address(caller);
-    // erc20_token.mint(total_airdrop_amount);
-    // erc20_token.approve(airdrop_address, total_airdrop_amount);
-    // erc20_token.transfer(airdrop_address, total_airdrop_amount);
+    set_contract_address(caller);
+    erc20_token.mint(total_airdrop_amount);
+    erc20_token.approve(airdrop_address, total_airdrop_amount);
+    erc20_token.transfer(airdrop_address, total_airdrop_amount);
 
-    // set_block_timestamp(start + 1);
+    set_block_timestamp(start + 1);
 
-    // set_contract_address(caller);
+    set_contract_address(caller);
 
-    // airdrop.compute_message_hash(
-    //     caller,
-    //     // other_caller
-    // )
-    //     .print();
+    let signature = array![1, 2];
+    airdrop.claim(signature);
 
-    // // airdrop.claim();
 
-    // let balance = erc20_token.balanceOf(caller);
-    // // balance.print();
-    // assert(balance == airdrop.get_user_stats(caller).at(2).clone(), 'InvalidAirdropAmount');
-// }
+    let balance = erc20_token.balanceOf(caller);
+    println!("Balance {}", balance);
+    // balance.print();
+    assert(balance == airdrop.get_user_stats(caller).at(1).clone(), 'InvalidAirdropAmount');
+}
 
 
 // #[test]
