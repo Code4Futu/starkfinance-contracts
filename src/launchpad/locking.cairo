@@ -62,22 +62,20 @@ use starknet::{
             let mut vesting_time: Array<u64> = ArrayTrait::<u64>::new();
             let mut vesting_percent: Array<u256> = ArrayTrait::<u256>::new();
         
-            if(lock.is_vesting) {
-                let total_vesting = self.total_vesting.read((token, lock_id));
-                let mut i: u32 = 0_u32;
-                loop {
-                    if i>= total_vesting {
-                        break;
-                    };
-                    vesting_time.append(
-                        self.vesting_time.read((token, lock_id, i))
-                    );
-                    vesting_percent.append(
-                        self.vesting_percent.read((token, lock_id, i))
-                    );
-                    i += 1;
+            let total_vesting = self.total_vesting.read((token, lock_id));
+            let mut i: u32 = 0_u32;
+            loop {
+                if i>= total_vesting {
+                    break;
                 };
-            }
+                vesting_time.append(
+                    self.vesting_time.read((token, lock_id, i))
+                );
+                vesting_percent.append(
+                    self.vesting_percent.read((token, lock_id, i))
+                );
+                i += 1;
+            };
             
             (lock, vesting_time, vesting_percent)
         }
@@ -91,12 +89,12 @@ use starknet::{
             owner: ContractAddress,
             token: ContractAddress,
             amount: u256,
-            tge: u64,
-            is_vesting: bool,
-            tge_percent: u256,
             vesting_time: Array<u64>,
             vesting_percent: Array<u256>,
         ) {
+            let total_vesting = vesting_time.len();
+            assert(total_vesting > 0 && total_vesting == vesting_percent.len(), 'InvalidVesting');
+
             let mut lock_id = self.total_lock.read(token);
 
             // TODO first take fee;
@@ -106,35 +104,25 @@ use starknet::{
             let caller = get_caller_address(); 
             InternalFunctions::_transfer_token_from(token, caller, this_contract, amount);
 
-            let mut _is_vesting = false;
-            let mut total_percent: u256 = tge_percent;
-            if(is_vesting && tge_percent < ONE_HUNDRED_PERCENT) {
-                _is_vesting = true;
-                let total_vesting = vesting_time.len();
-                assert(total_vesting == vesting_percent.len(), 'InvalidVesting');
-                let mut i: u32 = 0_u32;
-                loop {
-                    if i>= total_vesting {
-                        break;
-                    };
-                    self.vesting_time.write((token, lock_id, i),  vesting_time.at(i).clone());
-                    let percent = vesting_percent.at(i).clone();
-                    self.vesting_percent.write((token, lock_id, i), percent);
-                    total_percent += percent;
-                    i += 1;
+            let mut total_percent: u256 = 0;
+            let mut i: u32 = 0_u32;
+            loop {
+                if i>= total_vesting {
+                    break;
                 };
-                self.total_vesting.write((token, lock_id), total_vesting);
-            }
-
-            assert(total_percent <= ONE_HUNDRED_PERCENT, 'MustEq100%');
+                self.vesting_time.write((token, lock_id, i),  vesting_time.at(i).clone());
+                let percent = vesting_percent.at(i).clone();
+                self.vesting_percent.write((token, lock_id, i), percent);
+                total_percent += percent;
+                i += 1;
+            };
+            self.total_vesting.write((token, lock_id), total_vesting);
+            assert(total_percent == ONE_HUNDRED_PERCENT, 'MustEq100%');
 
             self.locks.write((token, lock_id), Lock {
                 owner,
                 token,
                 amount,
-                tge,
-                is_vesting: _is_vesting,
-                tge_percent,
             });
 
             self.emit(Created { 
@@ -159,26 +147,13 @@ use starknet::{
             assert(caller == lock.owner, 'Unauthorzied');
 
             let unlocked_count: u32 = self.unlocked_count.read((token, lock_id, caller));
+            assert(unlocked_count < self.total_vesting.read((token, lock_id)), 'UnlockedAll');
 
-            let is_vesting: bool = lock.is_vesting;
-            
             let mut amount: u256 = 0;
-            if (unlocked_count == 0) {
-                assert(current_time >= lock.tge, 'NotTimeToUnlock');
-                amount = lock.amount;
-                if(is_vesting) { 
-                    amount = lock.amount * lock.tge_percent / ONE_HUNDRED_PERCENT;
-                }
-            } else {
-                if(is_vesting) {
-                    assert(unlocked_count > 0 && unlocked_count <= self.total_vesting.read((token, lock_id)), 'UnlockedAllVesting');
-                    assert(current_time >= lock.tge + self.vesting_time.read((token, lock_id, unlocked_count - 1)), 'NotTimeToUnlockVesting');
-                    amount = lock.amount * self.vesting_percent.read((token, lock_id, unlocked_count - 1)) / ONE_HUNDRED_PERCENT;
-                } else {
-                    assert(false, 'Unlocked');
-                }
-            }
 
+            assert(current_time >= self.vesting_time.read((token, lock_id, unlocked_count)), 'InvalidUnlockTime');
+            amount = lock.amount * self.vesting_percent.read((token, lock_id, unlocked_count )) / ONE_HUNDRED_PERCENT;
+            
             self.unlocked_count.write((token, lock_id, caller), unlocked_count + 1);
 
             if(amount > 0) {

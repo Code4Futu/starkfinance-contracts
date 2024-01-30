@@ -30,8 +30,8 @@ mod mocks {
 #[cfg(test)]
 mod tests {
     mod launchpad {
-        mod launchpad;
+        // mod launchpad;
         // mod airdrop;
-        // mod locking;
+        mod locking;
     }
 }

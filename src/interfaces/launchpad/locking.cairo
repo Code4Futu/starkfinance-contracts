@@ -5,9 +5,6 @@ struct Lock {
     owner: ContractAddress,
     token: ContractAddress,
     amount: u256,
-    tge: u64,
-    is_vesting: bool,
-    tge_percent: u256,
 }
 
 #[starknet::interface]
@@ -19,9 +16,6 @@ trait ISFLocking<T> {
         owner: ContractAddress,
         token: ContractAddress,
         amount: u256,
-        tge: u64,
-        is_vesting: bool,
-        tge_percent: u256,
         vesting_time: Array<u64>,
         vesting_percent: Array<u256>,
     );

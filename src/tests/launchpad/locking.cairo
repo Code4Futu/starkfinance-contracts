@@ -1,3 +1,6 @@
+use core::fmt::Debug;
+use core::clone::Clone;
+use core::traits::Destruct;
 use integer::u256;
 use integer::u256_from_felt252;
 use integer::BoundedInt;
@@ -75,9 +78,6 @@ fn lock_lock(
     owner: ContractAddress,
     token: ContractAddress,
     amount: u256,
-    tge: u64,
-    is_vesting: bool,
-    tge_percent: u256,
     vesting_time: Array<u64>,
     vesting_percent: Array<u256>,
 ) {
@@ -85,9 +85,6 @@ fn lock_lock(
     owner.serialize(ref calldata);
     token.serialize(ref calldata);
     amount.serialize(ref calldata); 
-    tge.serialize(ref calldata); 
-    is_vesting.serialize(ref calldata); 
-    tge_percent.serialize(ref calldata);
     vesting_time.serialize(ref calldata); 
     vesting_percent.serialize(ref calldata);
     
@@ -96,9 +93,6 @@ fn lock_lock(
         owner,
         token,
         amount,
-        tge,
-        is_vesting,
-        tge_percent,
         vesting_time,
         vesting_percent,
     );
@@ -107,7 +101,7 @@ fn lock_lock(
 #[test]
 #[available_gas(20000000)]
 #[should_panic(expected: ('InvalidVesting', 'ENTRYPOINT_FAILED', ))]
-fn test_lock_lock_invalid_vesting() {
+fn test_lock_with_invalid_vesting() {
     let init_supply = 1_000_000_u256;
     let (
         caller, 
@@ -129,10 +123,7 @@ fn test_lock_lock_invalid_vesting() {
         owner: caller,
         token: erc20_address,
         amount: amount,
-        tge: current_time + 10,
-        is_vesting: true,
-        tge_percent: 50_000,
-        vesting_time: array![],
+        vesting_time: array![current_time , current_time + 10],
         vesting_percent: array![50_000],
     );
 }
@@ -140,7 +131,7 @@ fn test_lock_lock_invalid_vesting() {
 #[test]
 #[available_gas(20000000)]
 #[should_panic(expected: ('MustEq100%', 'ENTRYPOINT_FAILED', ))]
-fn test_lock_lock_invalid_vestting_percent() {
+fn test_lock_with_invalid_vestting_percent() {
     let init_supply = 1_000_000_u256;
     let (
         caller, 
@@ -162,18 +153,15 @@ fn test_lock_lock_invalid_vestting_percent() {
         owner: caller,
         token: erc20_address,
         amount: amount,
-        tge: current_time + 10,
-        is_vesting: true,
-        tge_percent: 50_000,
-        vesting_time: array![6000],
-        vesting_percent: array![50_001],
+        vesting_time: array![current_time , current_time + 10],
+        vesting_percent: array![50_000, 50_001],
     );
 }
 
 
 #[test]
 #[available_gas(20000000)]
-fn test_lock_lock_no_vesting_success() {
+fn test_lock_with_no_vesting_success() {
     let init_supply = 1_000_000_u256;
     let (
         caller, 
@@ -195,19 +183,18 @@ fn test_lock_lock_no_vesting_success() {
         owner: caller,
         token: erc20_address,
         amount: amount,
-        tge: current_time + 10,
-        is_vesting: false,
-        tge_percent: 100_000,
-        vesting_time: array![],
-        vesting_percent: array![],
+        vesting_time: array![current_time],
+        vesting_percent: array![100_000],
     );
+
+    // TODO check lockId token
 
     assert(erc20_token.balanceOf(caller) == 0, 'Blance should eq 0');
 }
 
 #[test]
 #[available_gas(20000000)]
-fn test_lock_lock_vesting_success() {
+fn test_lock_with_vesting_success() {
     let init_supply = 1_000_000_u256;
     let (
         caller, 
@@ -229,12 +216,11 @@ fn test_lock_lock_vesting_success() {
         owner: caller,
         token: erc20_address,
         amount: amount,
-        tge: current_time + 10,
-        is_vesting: true,
-        tge_percent: 50_000,
-        vesting_time: array![6000],
-        vesting_percent: array![50_000],
+        vesting_time: array![current_time, current_time + 3600],
+        vesting_percent: array![50_000, 50_000],
     );
+
+    // TODO check lock balance
 
     assert(erc20_token.balanceOf(caller) == 0, 'Blance should eq 0');
 }
@@ -264,11 +250,8 @@ fn test_unlock_invalid_lock() {
         owner: caller,
         token: erc20_address,
         amount: amount,
-        tge: current_time + 10,
-        is_vesting: true,
-        tge_percent: 50_000,
-        vesting_time: array![6000],
-        vesting_percent: array![50_000],
+        vesting_time: array![current_time, current_time + 3600],
+        vesting_percent: array![50_000, 50_000],
     );
 
     locking.unlock(erc20_address, 1);
@@ -299,11 +282,8 @@ fn test_unlock_unauthorzied_lock() {
         owner: caller,
         token: erc20_address,
         amount: amount,
-        tge: current_time + 10,
-        is_vesting: true,
-        tge_percent: 50_000,
-        vesting_time: array![6000],
-        vesting_percent: array![50_000],
+        vesting_time: array![current_time, current_time + 3600],
+        vesting_percent: array![50_000, 50_000],
     );
 
     set_contract_address(other_caller);
@@ -312,7 +292,7 @@ fn test_unlock_unauthorzied_lock() {
 
 #[test]
 #[available_gas(20000000)]
-#[should_panic(expected: ('NotTimeToUnlock', 'ENTRYPOINT_FAILED'))]
+#[should_panic(expected: ('InvalidUnlockTime', 'ENTRYPOINT_FAILED'))]
 fn test_unlock_invalid_unlock_time() {
     let init_supply = 1_000_000_u256;
     let (
@@ -335,19 +315,18 @@ fn test_unlock_invalid_unlock_time() {
         owner: caller,
         token: erc20_address,
         amount: amount,
-        tge: current_time + 10,
-        is_vesting: true,
-        tge_percent: 50_000,
-        vesting_time: array![6000],
-        vesting_percent: array![50_000],
+        vesting_time: array![current_time + 100, current_time + 3600],
+        vesting_percent: array![50_000, 50_000],
     );
+
+    set_block_timestamp(current_time + 10);
 
     locking.unlock(erc20_address, 0);
 }
 
 #[test]
 #[available_gas(20000000)]
-fn test_unlock_lock_no_vesting_success() {
+fn test_unlock_with_no_vesting_success() {
     let init_supply = 1_000_000_u256;
     let (
         caller, 
@@ -369,11 +348,8 @@ fn test_unlock_lock_no_vesting_success() {
         owner: caller,
         token: erc20_address,
         amount: amount,
-        tge: current_time + 10,
-        is_vesting: true,
-        tge_percent: 100_000,
-        vesting_time: array![],
-        vesting_percent: array![],
+        vesting_time: array![current_time],
+        vesting_percent: array![100_000],
     );
     
     assert(erc20_token.balanceOf(locking_address) == init_supply, 'Balance should eq init supply');
@@ -387,8 +363,8 @@ fn test_unlock_lock_no_vesting_success() {
 
 #[test]
 #[available_gas(20000000)]
-#[should_panic(expected: ('Unlocked', 'ENTRYPOINT_FAILED'))]
-fn test_unlock_lock_no_vesting_twince() {
+#[should_panic(expected: ('UnlockedAll', 'ENTRYPOINT_FAILED'))]
+fn test_unlock_with_no_vesting_twince() {
     let init_supply = 1_000_000_u256;
     let (
         caller, 
@@ -410,11 +386,8 @@ fn test_unlock_lock_no_vesting_twince() {
         owner: caller,
         token: erc20_address,
         amount: amount,
-        tge: current_time + 10,
-        is_vesting: false,
-        tge_percent: 100_000,
-        vesting_time: array![],
-        vesting_percent: array![],
+        vesting_time: array![current_time],
+        vesting_percent: array![100_000],
     );
     
     assert(erc20_token.balanceOf(locking_address) == init_supply, 'Balance should eq init supply');
@@ -430,8 +403,8 @@ fn test_unlock_lock_no_vesting_twince() {
 
 #[test]
 #[available_gas(20000000)]
-#[should_panic(expected: ('NotTimeToUnlockVesting', 'ENTRYPOINT_FAILED'))]
-fn test_unlock_lock_vesting_not_time_unlock() {
+#[should_panic(expected: ('InvalidUnlockTime', 'ENTRYPOINT_FAILED'))]
+fn test_unlock_with_vesting_invalid_time_unlock() {
     let init_supply = 1_000_000_u256;
     let (
         caller, 
@@ -453,27 +426,19 @@ fn test_unlock_lock_vesting_not_time_unlock() {
         owner: caller,
         token: erc20_address,
         amount: amount,
-        tge: current_time + 10,
-        is_vesting: true,
-        tge_percent: 50_000,
-        vesting_time: array![6000],
-        vesting_percent: array![50_000],
+        vesting_time: array![current_time + 100, current_time + 3600],
+        vesting_percent: array![50_000, 50_000],
     );
     
     assert(erc20_token.balanceOf(locking_address) == init_supply, 'Balance should eq init supply');
-
-    set_block_timestamp(current_time + 10);
-
-    locking.unlock(erc20_address, 0);
-    assert(erc20_token.balanceOf(caller) == init_supply / 2, 'Balance should eq 1/2 init');
 
     locking.unlock(erc20_address, 0);
 }
 
 #[test]
 #[available_gas(20000000)]
-#[should_panic(expected: ('UnlockedAllVesting', 'ENTRYPOINT_FAILED'))]
-fn test_unlock_lock_vesting_unlock_over_vesting() {
+#[should_panic(expected: ('UnlockedAll', 'ENTRYPOINT_FAILED'))]
+fn test_unlock_with_vesting_unlock_over_vesting() {
     let init_supply = 1_000_000_u256;
     let (
         caller, 
@@ -495,11 +460,8 @@ fn test_unlock_lock_vesting_unlock_over_vesting() {
         owner: caller,
         token: erc20_address,
         amount: amount,
-        tge: current_time + 10,
-        is_vesting: true,
-        tge_percent: 50_000,
-        vesting_time: array![6000],
-        vesting_percent: array![50_000],
+        vesting_time: array![current_time, current_time + 20],
+        vesting_percent: array![50_000, 50_000],
     );
     
     assert(erc20_token.balanceOf(locking_address) == init_supply, 'Balance should eq init supply');
@@ -519,7 +481,7 @@ fn test_unlock_lock_vesting_unlock_over_vesting() {
 
 #[test]
 #[available_gas(20000000)]
-fn test_unlock_lock_vesting_success() {
+fn test_unlock_with_vesting_success() {
     let init_supply = 1_000_000_u256;
     let (
         caller, 
@@ -541,11 +503,8 @@ fn test_unlock_lock_vesting_success() {
         owner: caller,
         token: erc20_address,
         amount: amount,
-        tge: current_time + 10,
-        is_vesting: true,
-        tge_percent: 50_000,
-        vesting_time: array![6000],
-        vesting_percent: array![50_000],
+        vesting_time: array![current_time, current_time + 20],
+        vesting_percent: array![50_000, 50_000],
     );
     
     assert(erc20_token.balanceOf(locking_address) == init_supply, 'Balance should eq init supply');

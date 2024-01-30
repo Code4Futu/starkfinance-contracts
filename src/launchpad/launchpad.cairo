@@ -123,16 +123,20 @@ mod SFLaunchpad {
 
         let total_vesting = vesting_time.len();
         assert(total_vesting == vesting_percent.len(), 'Invalid vesting');
+        let mut total_percent: u256 = 0;
         let mut i: u32 = 0_u32;
         loop {
             if i>= total_vesting {
                 break;
             };
             self.vesting_time.write((i), vesting_time.at(i).clone());
-            self.vesting_percent.write((i), vesting_percent.at(i).clone());
+            let percent: u256 = vesting_percent.at(i).clone();
+            self.vesting_percent.write((i), percent);
+            total_percent += percent;
             i += 1;
         };
         self.total_vesting.write(total_vesting);
+        assert(total_percent == ONE_HUNDRED_PERCENT, 'MustEq100%');
     }
 
     #[external(v0)]
